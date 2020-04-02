@@ -1,0 +1,55 @@
+model:
+  type: ssd
+  use_depthwise: True
+  reid: True
+  reid_dim: 256
+  num_class: 1
+  width: 300
+  height: 300
+  channel: 3
+
+optimizer:
+  type: rms_prop_optimizer
+  learning_rate:
+    type: exponential_decay_learning_rate
+    initial_learning_rate: 0.004
+    decay_steps: 800000
+    decay_factor: 0.95
+  decay: 0.9
+  momentum_optimizer_value: 0.9
+  epsilon: 1.0
+
+train_config:
+  num_step: 20000
+  # fine_tune_checkpoint: "/Users/joeltsui/Downloads/ssdlite-mobilnet-v2/ckpt-165"
+
+eval_config:
+  pid_name_map_path: "/Users/joeltsui/Desktop/Work/ReID/dataset/data_process/CUHK-SYSU/pid_map_test.txt"
+  gallery_map_path: "/Users/joeltsui/Desktop/Work/ReID/dataset/data_process/CUHK-SYSU/test_gallery_50.txt"
+
+train_input:
+  input_path:
+    - "/Users/joeltsui/Desktop/Work/DeviceCustomerInfos/code/V2/backup/reid/cspes_reid_train.record"
+  shuffle: True
+  num_prefetch_batches: 2
+  batch_size: 4
+  transform:
+    resize:
+      type: "fixed_shape_resizer"
+      method: "BILINEAR"
+    augument:
+      - "ssd_random_crop"
+      - "random_horizontal_flip"
+    padding:
+      max_num_boxes: 100
+
+eval_input:
+  input_path:
+    - "/Users/joeltsui/Desktop/Work/DeviceCustomerInfos/code/V2/backup/reid/cspes_reid_train.record"
+  batch_size: 4
+  transform:
+    resize:
+      type: "fixed_shape_resizer"
+      method: "BILINEAR"
+    padding:
+      max_num_boxes: 100
