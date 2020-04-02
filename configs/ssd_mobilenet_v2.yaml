@@ -21,15 +21,12 @@ optimizer:
 
 train_config:
   num_step: 20000
-  # fine_tune_checkpoint: "/Users/joeltsui/Downloads/ssdlite-mobilnet-v2/ckpt-165"
+  # fine_tune_checkpoint: "path/to/ckpt/
 
-eval_config:
-  pid_name_map_path: "/Users/joeltsui/Desktop/Work/ReID/dataset/data_process/CUHK-SYSU/pid_map_test.txt"
-  gallery_map_path: "/Users/joeltsui/Desktop/Work/ReID/dataset/data_process/CUHK-SYSU/test_gallery_50.txt"
 
 train_input:
   input_path:
-    - "/Users/joeltsui/Desktop/Work/DeviceCustomerInfos/code/V2/backup/reid/cspes_reid_train.record"
+    - "path/to/record-file"
   shuffle: True
   num_prefetch_batches: 2
   batch_size: 4
@@ -45,7 +42,7 @@ train_input:
 
 eval_input:
   input_path:
-    - "/Users/joeltsui/Desktop/Work/DeviceCustomerInfos/code/V2/backup/reid/cspes_reid_train.record"
+    - "path/to/record-file"
   batch_size: 4
   transform:
     resize:
