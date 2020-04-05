@@ -29,7 +29,6 @@ def coco_eval_step(model, test_dataset):
         tf.summary.scalar("coco/test/precision", precision, step=step)
         tf.summary.scalar("coco/test/recall", recall, step=step)
 
-@tf.function
 def coco_eval_one_step(model, test_data, coco_eval):
     image = test_data[InputDataKeys.image]
 
@@ -70,9 +69,13 @@ def reid_eval_step(model,
     step = tf.summary.experimental.get_step()
     if step is not None:
         matched_count, total_query, precision = reid_eval.evaluate()
+        images = reid_eval.evaluate_images()
         tf.summary.scalar("reid/test/matched_count", matched_count, step=step)
         tf.summary.scalar("reid/test/total_query", total_query, step=step)
         tf.summary.scalar("reid/test/reid_precision", precision, step=step)
+
+        if len(images) > 0:
+            tf.summary.image("reid/test/left:query,middle:gallery,right:gt", images, step=step)
 
 
 def reid_eval_one_step(model, test_data, reid_eval):
@@ -93,8 +96,14 @@ def reid_eval_one_step(model, test_data, reid_eval):
     predict_labels = predict_dict[DetectionKeys.detection_classes]
     predict_bboxes = predict_dict[DetectionKeys.detection_bboxes]
 
-    predict_dict = label_pid_matching(image_names, labels, bboxes,pids,
-                                            predict_labels,predict_bboxes, predict_reid_features)
+    predict_dict = label_pid_matching(image_names,
+                                      images,
+                                      labels,
+                                      bboxes,
+                                      pids,
+                                      predict_labels,
+                                      predict_bboxes,
+                                      predict_reid_features)
 
     # 统计一下有多少预测的正样本
     step = tf.summary.experimental.get_step()
@@ -137,6 +146,7 @@ def coco_summary_images(model, test_dataset, step):
 
 def label_pid_matching(
         image_names,
+        images,
         groundtruth_labels,
         groundtruth_bboxes,
         groundtruth_pids,
@@ -175,7 +185,7 @@ def label_pid_matching(
         jac_anchor_max = tf.reduce_max(jac, axis=1)
         jac_anchor_max_index = tf.argmax(jac, axis=1)
         # 阈值必须满足一定的条件的才拿出来
-        jac_anchor_max_mask = tf.squeeze(tf.where(jac_anchor_max > iou_threshold), axis=-1)
+        jac_anchor_max_mask = tf.where(jac_anchor_max > iou_threshold) #tf.squeeze(tf.where(jac_anchor_max > iou_threshold), axis=-1)
         jac_anchor_max_index = tf.gather(jac_anchor_max_index, jac_anchor_max_mask)
         batch_predict_selector = tf.gather(batch_predict_selector, jac_anchor_max_mask)
 
@@ -189,6 +199,10 @@ def label_pid_matching(
                                                                 (-1, 1)),
                                                      tf.reshape(jac_anchor_pid, (-1, 1)))
 
+        # batch_mask_pid = tf.tensor_scatter_nd_update(batch_mask_pid,
+        #                                              tf.cast(batch_predict_selector, dtype=tf.int32),
+        #                                              jac_anchor_pid)
+
         batch_mask_pid = tf.squeeze(batch_mask_pid, axis=-1)
 
         output_pid = output_pid.write(idx, batch_mask_pid)
@@ -197,6 +211,7 @@ def label_pid_matching(
     valid_selector = tf.where(predict_pids > -1)
     valid_batch_selector = tf.unstack(valid_selector, axis=1)[0]
     predict_image_names = tf.gather(image_names, valid_batch_selector)
+    predict_images = tf.gather(images, valid_batch_selector)
     predict_labels = tf.gather_nd(predict_labels, valid_selector)
     predict_bboxes = tf.gather_nd(predict_bboxes, valid_selector)
     predict_pids = tf.gather_nd(predict_pids, valid_selector)
@@ -204,6 +219,7 @@ def label_pid_matching(
 
     outputs = {
         DetectionKeys.image_name: predict_image_names,
+        DetectionKeys.image:predict_images,
         DetectionKeys.detection_classes: predict_labels,
         DetectionKeys.detection_bboxes: predict_bboxes,
         DetectionKeys.pids: predict_pids,

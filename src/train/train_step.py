@@ -16,7 +16,6 @@ def train_step(model, optimizer, train_dataset):
     for inputs in train_dataset:
         one_step(model, optimizer,inputs)
 
-@tf.function
 def one_step(model, optimizer, inputs):
     image = inputs[InputDataKeys.image]
     with tf.GradientTape() as tape:

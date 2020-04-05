@@ -51,7 +51,7 @@ class TargetAssign():
 
         # 给每一个bbox都分配至少一个anchor
         force_match_rows = tf.argmax(jaccard,2)
-        force_match_rows = set_value_use_index(force_match_rows, tf.squeeze(labels,-1) <=0, -1)
+        force_match_rows = set_value_use_index(force_match_rows, tf.squeeze(labels, -1) > 0, -1)
         force_match_rows_indicator = tf.one_hot(force_match_rows, len(self._anchors), axis=-1)
         force_match_rows_id = tf.argmax(force_match_rows_indicator, 1)
         force_match_rows_mask = tf.cast(

@@ -19,7 +19,7 @@ class Tensor():
             # tensor = tf.sparse.to_dense(tensor, default_value=self._default_value)
             tensor = tensor.values
             tensor = tf.cast(tensor,self._dtype)
-            tensor = tf.reshape(tensor,[-1,1])
+            tensor = tf.reshape(tensor,(-1,1))
 
         return tensor
 

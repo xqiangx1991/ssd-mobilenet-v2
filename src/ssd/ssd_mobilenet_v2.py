@@ -56,7 +56,7 @@ class SSDMobileNetV2(tf.keras.Model):
         self.calc_for_anchor_tools(inputs_shape)
 
 
-
+    @tf.function
     def call(self, inputs, training=False, mask=None):
         # 第一层的特征
         extend_features = self.infe_extend_features(inputs, training)
@@ -109,76 +109,99 @@ class SSDMobileNetV2(tf.keras.Model):
         # 这部分主要用的就是bbox和label，其他的都是原封不动即可
         bboxes = self.box_coder.decode(predict_bboxes)
         scores = tf.sigmoid(predict_labels)
-        # 剔除background
-        scores = scores[:,:,1:]
 
         batch_size = tf.shape(predict_labels)[0]
-        masks = tf.TensorArray(dtype=tf.float32, size=batch_size)
-        for idx in range(batch_size):
+        selected_labels = tf.TensorArray(dtype=tf.int32, size=batch_size)
+        selected_scores = tf.TensorArray(dtype=tf.float32, size=batch_size)
+        for idx in tf.range(batch_size):
             bbox = bboxes[idx]
             # 按照num_class进行处理
             # 每一个class是一列
             cls_indice = tf.TensorArray(dtype=tf.int32, size=self.num_class)
+            cls_values = tf.TensorArray(dtype=tf.int32, size=self.num_class)
             cls_scores = tf.TensorArray(dtype=tf.float32, size=self.num_class)
             for cls_idx in range(self.num_class):
-                score = scores[idx,:,cls_idx]
+                cls = cls_idx + 1
+                score = scores[idx,:,cls]
                 max_select_size = tf.minimum(len(bbox), max_detections_per_class)
-                selected_index, selected_scores = \
+                cls_index, cls_score = \
                     non_max_suppression_with_scores(bbox, score, max_select_size, iou_threshold, score_threshold)
 
                 # 按照分数要进行重排，只选取其中的一部分，因此需要把分数和index都拿出来
                 # 构建index和score
                 # 对index和score进行扩充
                 # index应该把对应的cls_index加进去
-                num_selected = tf.shape(selected_index)[0]
-                selected_index = tf.concat(
-                    [selected_index, tf.zeros((max_select_size - num_selected), tf.int32)],
-                    axis=0
-                )
-                selected_index = tf.stack([selected_index,
-                                           tf.ones((max_select_size), tf.int32) * cls_idx],
-                                          axis=1)
-
-
-                selected_scores = tf.concat(
-                    [selected_scores, tf.zeros((max_select_size - num_selected), tf.float32)],
+                num_selected = tf.shape(cls_index)[0]
+                cls_index = tf.concat(
+                    [cls_index, tf.zeros((max_select_size - num_selected), tf.int32)],
                     axis=0
                 )
 
-                cls_indice = cls_indice.write(cls_idx, selected_index)
-                cls_scores = cls_scores.write(cls_idx, selected_scores)
+                cls_value = tf.ones(shape=(max_select_size), dtype=tf.int32) * cls
+
+                cls_score = tf.concat(
+                    [cls_score,
+                     tf.zeros((max_select_size - num_selected), tf.float32)],
+                    axis=0
+                )
+                # selected_scores = tf.reshape(selected_scores, (-1,1))
+
+                cls_indice = cls_indice.write(cls_idx, cls_index)
+                cls_values = cls_values.write(cls_idx, cls_value)
+                cls_scores = cls_scores.write(cls_idx, cls_score)
 
             cls_indice = cls_indice.concat()
+            cls_values = cls_values.concat()
             cls_scores = cls_scores.concat()
 
-            top_values, top_index = tf.math.top_k(cls_scores,max_total_detections)
+            total_detections = tf.minimum(tf.shape(cls_scores)[0] ,max_total_detections)
+            # cls_scores = tf.reshape(cls_scores,(-1,))
+
+            top_values, top_index = tf.math.top_k(cls_scores,total_detections)
             # 选择其中的index
+            selected_mask = tf.where(top_values > score_threshold)
             selected_index_final = tf.gather(cls_indice,
-                        tf.squeeze(tf.where(top_values > score_threshold),axis=-1))
+                        selected_mask)
+            selected_cls_values_final = tf.gather(cls_values,
+                                           selected_mask)
+            selected_cls_scores_final = tf.gather(cls_scores,
+                                                  selected_mask)
 
-            # 按照分数排序只取前几个
-            mask = tf.scatter_nd(selected_index_final,
-                                 tf.ones((tf.shape(selected_index_final)[0],), tf.float32),
-                                 tf.shape(scores[idx]))
+            # selected_final_index = tf.reshape(selected_final_index, (-1,1))
+            mask_shape = (tf.shape(scores[idx])[0],1)
+            selected_label = tf.scatter_nd(selected_index_final,
+                                 selected_cls_values_final,
+                                 mask_shape)
 
+            selected_score = tf.scatter_nd(selected_index_final,
+                                           selected_cls_scores_final,
+                                           mask_shape)
+
+            # label = tf.reshape(label,(-1,1))
 
             # 合并所有的类别
-            masks = masks.write(idx, mask)
+            selected_labels = selected_labels.write(idx, selected_label)
+            selected_scores = selected_scores.write(idx, selected_score)
 
-        masks = masks.stack()
-        bboxes = bboxes * masks
-        scores = scores * masks
+        selected_labels = selected_labels.stack()
+        selected_scores = selected_scores.stack()
+        masks = tf.cast(selected_labels > 0, tf.float32)
+        bboxes = tf.multiply(bboxes, masks)
+        # scores = tf.multiply(scores, masks)
+
+        # selected_labels = tf.squeeze(selected_labels, axis=-1)
+        # selected_scores = tf.squeeze(selected_scores, axis=-1)
 
         output_dict = dict()
-        output_dict[DetectionKeys.detection_classes] = masks
+        output_dict[DetectionKeys.detection_classes] = selected_labels
         # 把bbox全部弄成0
         output_dict[DetectionKeys.detection_bboxes] = bboxes
-        output_dict[DetectionKeys.detection_scores] = scores
+        output_dict[DetectionKeys.detection_scores] = selected_scores
 
         return output_dict
 
     def calculate_loss(self, groundtruth_dict,predict_dict):
-        target_assign_output = self.target_assign(groundtruth_dict)
+        target_assign_output = self.target_assignor.assign(groundtruth_dict)
         predict_labels, predict_bboxes = predict_dict[DetectionKeys.detection_classes], \
                 predict_dict[DetectionKeys.detection_bboxes]
         predict_bboxes_decode = self.box_coder.decode(predict_bboxes)
@@ -209,13 +232,7 @@ class SSDMobileNetV2(tf.keras.Model):
 
         return output_dict
 
-    def target_assign(self, groundtruth_dict):
-        target_assign_output = self.target_assignor.assign(groundtruth_dict)
-        return target_assign_output
-
-
     def _calculate_label_loss(self, target_labels, predict_logits):
-
         target_class = tf.squeeze(target_labels, -1)
         target_class = tf.cast(target_class, tf.int32)
         target_class_one_hot = tf.one_hot(target_class, self.num_class_with_background, dtype=tf.float32)

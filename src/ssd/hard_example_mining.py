@@ -23,7 +23,7 @@ class HardExampleMining():
         batch_size = tf.shape(target_labels)[0]
         # 按照batch size的纬度进行处理
         masks = tf.TensorArray(tf.float32, size = batch_size)
-        for batch in range(batch_size):
+        for batch in tf.range(batch_size):
             batch_class_loss = labels_loss[batch]
             batch_encode_bboxes = predict_bboxes_decode[batch]
             batch_encode_labels = target_labels[batch]

@@ -103,11 +103,14 @@ def prepare():
 
     use_reid = model_config.get('reid', False)
     train_input_config = config['train_input']
+    train_input_config = reconstruct_input_config(model_config, train_input_config)
+
     train_dataset = build_dataset(train_input_config,
                                   model.preprocess,
                                   use_reid=use_reid)
 
     eval_input_config = config['eval_input']
+    eval_input_config = reconstruct_input_config(model_config, eval_input_config)
     eval_dataset = build_dataset(eval_input_config,
                                  model.preprocess,
                                  use_reid=use_reid)

@@ -35,11 +35,12 @@ class CocoEvaluator():
 
         for batch in range(batch_size):
             groundtruth_bboxes_batch = groundtruth_bboxes[batch]
-            prediction_bbxoes_batch = prediction_bbxoes[batch]
+            prediction_bboxes_batch = prediction_bbxoes[batch]
             pt_labels_batch = tf.cast(prediction_labels[batch], tf.int32)
+            pt_labels_batch = tf.reshape(pt_labels_batch,(-1,))
             gt_labels_batch = groundtruth_labels[batch]
 
-            jaccards_batch = iou(groundtruth_bboxes_batch, prediction_bbxoes_batch)
+            jaccards_batch = iou(groundtruth_bboxes_batch, prediction_bboxes_batch)
             jaccards_argmax_cross_pt_batch = tf.argmax(jaccards_batch,axis=0)
             jaccards_max_cross_pt_batch = tf.reduce_max(jaccards_batch, axis=0)
 
@@ -55,11 +56,11 @@ class CocoEvaluator():
             gt_labels_cross_pt = tf.squeeze(gt_labels_cross_pt, axis=-1)
             gt_labels_cross_pt = gt_labels_cross_pt * \
                                  tf.cast(jaccards_max_cross_pt_mask, gt_labels_cross_pt.dtype)
-
+            gt_labels_cross_pt = tf.reshape(gt_labels_cross_pt,(-1,))
             # 比较一下
             # TODO:有可能出现一个gt对应几个pt，但是这种情况先不考虑
-            self.precision.update_state(gt_labels_cross_pt, pt_labels_batch)
 
+            self.precision.update_state(gt_labels_cross_pt, pt_labels_batch)
             # ========= 计算recall =========
             # iou要满足条件
             jaccards_max_cross_gt_mask = jaccards_max_cross_gt_batch > self.iou_th
@@ -68,7 +69,8 @@ class CocoEvaluator():
                                  tf.cast(jaccards_max_cross_gt_mask,pt_labels_cross_gt.dtype)
 
             # 比较一下
-            self.recall.update_state(gt_labels_batch,tf.expand_dims(pt_labels_cross_gt, axis=-1))
+            gt_labels_batch = tf.reshape(gt_labels_batch, (-1,))
+            self.recall.update_state(gt_labels_batch,pt_labels_cross_gt)
 
     def evaluate(self):
         precision = self.precision.result()

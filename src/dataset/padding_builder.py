@@ -36,7 +36,7 @@ def pad_input_data_to_static_shapes(tensor_dict,
 
     padding_shapes = {
         InputDataKeys.image: [height, width, num_channels],
-        InputDataKeys.groundtruth_classes: [max_num_boxes, num_class_with_background - 1],
+        InputDataKeys.groundtruth_classes: [max_num_boxes, 1],
         InputDataKeys.groundtruth_bboxes: [max_num_boxes, 4],
         InputDataKeys.pids: [max_num_boxes, 1]
     }

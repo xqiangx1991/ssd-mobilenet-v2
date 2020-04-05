@@ -8,6 +8,7 @@ from src.utils.standard_fields import DetectionKeys
 from collections import defaultdict
 import random
 from src.utils.logger import Logger
+from src.utils.cv_utils import draw_detection
 
 logging = Logger.getLogger()
 
@@ -63,9 +64,24 @@ class ReIDEvaluator():
         self.pid_name_map = read_pid_name_map(pid_name_map_path)
         self.gallery_map = read_gallery_map(gallery_map_path)
 
+        # 从所有的候选集中选取10个query
+        self.im_keys = list()
+        self.im_query = list()
+        self.im_images = dict()
+        self.im_bboxes = dict()
+        self.im_query_map = dict()
+
+        query_keys = list(self.gallery_map.keys())[:10]
+        for query_key in query_keys:
+            keys = [query_key] + self.gallery_map[query_key]
+            [self.im_keys.append(k) for k in keys]
+            self.im_query.append(query_key)
+
+
     def accumulate(self, predict_dict):
         # 输入预测值，构建查询table
         image_names = predict_dict[DetectionKeys.image_name]
+        images = predict_dict[DetectionKeys.image]
         predict_labels = predict_dict[DetectionKeys.detection_classes]
         predict_bboxes = predict_dict[DetectionKeys.detection_bboxes]
         predict_features = predict_dict[DetectionKeys.reid_feature]
@@ -83,8 +99,50 @@ class ReIDEvaluator():
                 predict_pid_name = self.pid_name_map[predict_pid]
 
             key = construct_key(image_name, predict_pid_name)
+
+            if key in self.im_keys:
+                self.im_images[key] = images[idx]
+                self.im_bboxes[key] = predict_bboxes[idx]
+
             self.pid_feature_map[key] = predict_features[idx]
             self.pidname_keys_map[predict_pid_name].append(key)
+
+
+    def evaluate_images(self):
+        output_images = list()
+        for query_key in self.im_query_map.keys():
+            gallery_key = self.im_query_map[query_key]['gallery_key']
+            query_gt_key = self.im_query_map[query_key]['gt_key']
+
+            keys = [query_key, gallery_key, query_gt_key]
+            colors = [(255,0,0),(0,255,0),(0,0,255)]
+            images = list()
+            bboxes = list()
+
+            for key in keys:
+                if key in self.im_images:
+                    images.append(self.im_images[key])
+                    bboxes.append(self.im_bboxes[key])
+
+            serial_images = list()
+            for idx, image in enumerate(images):
+                image = (image + 1.0)/2.0
+                # bboxes = [size, 4]
+                # labels = [size, ]
+                bbox = bboxes[idx]
+                bbox = tf.constant(bbox, shape=(1,4))
+                label = tf.ones((1,1))
+
+                image = draw_detection(image, label, bbox, color=colors[idx])
+                serial_images.append(image)
+
+            if len(serial_images) > 0:
+                serial_images = tf.concat(serial_images, axis=1)
+                output_images.append(serial_images)
+
+        return output_images
+
+
 
     def evaluate(self, K = 50):
         # 所有已经提取了特征的
@@ -96,6 +154,7 @@ class ReIDEvaluator():
         total_matched_count = 0
         for query_key in self.gallery_map.keys():
             # 如果querykey没有提取特征，略过
+            query_gt_key = query_key
             if query_key not in self.pid_feature_map:
                 continue
             _, query_pid_name = deconstruct_key(query_key)
@@ -117,6 +176,7 @@ class ReIDEvaluator():
             for ck in candicate_keys:
                 if ck != query_key:
                     gallery_pool_keys.append(ck)
+                    query_gt_key = ck
                     break
             # 把候选集对应的特征都捞出来进行对比
             valid_gallery_pool_features = list()
@@ -156,6 +216,13 @@ class ReIDEvaluator():
                 total_matched_count += 1
 
             total_valid_query_count += 1
+
+            # 处理图片数据
+            if query_key in self.im_query:
+                self.im_query_map[query_key] = {"gallery_key":matched_gallery_pool_key,
+                                                "gt_key":query_gt_key}
+
+
         total_valid_query_count = max(total_valid_query_count, 1)
         accuracy = total_matched_count / total_valid_query_count
 

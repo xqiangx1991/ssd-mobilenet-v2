@@ -47,6 +47,7 @@ class SSDMobileNetV2ReID(SSDMobileNetV2):
                                      reid_dims=self.reid_dims,
                                      use_depthwise=use_depthwise)
 
+    @tf.function
     def call(self, inputs, training=False, mask = None):
         extend_features = self.infe_extend_features(inputs, training)
         label_features, bboxes_features = self.ssd_predictor(extend_features, training)
@@ -62,7 +63,7 @@ class SSDMobileNetV2ReID(SSDMobileNetV2):
 
 
     def calculate_loss(self, groundtruth_dict,predict_dict):
-        target_assign_output = self.target_assign(groundtruth_dict)
+        target_assign_output = self.target_assignor.assign(groundtruth_dict)
         predict_labels, predict_bboxes = predict_dict[DetectionKeys.detection_classes], \
                                          predict_dict[DetectionKeys.detection_bboxes]
         predict_bboxes_decode = self.box_coder.decode(predict_bboxes)

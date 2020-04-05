@@ -31,6 +31,7 @@ class InputDataKeys():
 
 class DetectionKeys():
     image_name = "image_name"
+    image = "image"
     detection_bboxes = "detection_bboxes"
     detection_scores = "detection_scores"
     detection_classes = "detection_classes"
